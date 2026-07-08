@@ -26,8 +26,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>            // 濡傛灉浣犳兂鐢ㄧ畝鍗?printf 璋冭瘯
-#include <stdarg.h>           // 鍚屼笂
+#include <stdio.h>            // 如果需要简单 printf 调试
+#include <stdarg.h>           // 同上
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -98,6 +98,10 @@ extern DMA_HandleTypeDef hdma_usart1_tx;
 
 #define ANO_SRC_ADDR  0x01      // STM32
 #define ANO_DST_ADDR  0xFF      // PC上位机
+
+/* 新增：刹车输入引脚定义 */
+#define APP_BRAKE_GPIO_PORT      GPIOC
+#define APP_BRAKE_GPIO_PIN       GPIO_PIN_1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -179,7 +183,6 @@ static void App_AnoSendFrame(
 static void App_Init(void)
 {
   CAN_FilterTypeDef filter = {0};
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   app_motors[0].node_id = APP_MOTOR_NODE_ID_1;
 #if APP_MOTOR_DUAL_NODE1_MODE
@@ -187,12 +190,6 @@ static void App_Init(void)
 #else
   app_motors[1].node_id = APP_MOTOR_NODE_ID_2;
 #endif
-
-  /* Stop input: PC3 high means stop, so keep a pulldown when the switch is open. */
-  GPIO_InitStruct.Pin = GPIO_PIN_3;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   HAL_ADCEx_Calibration_Start(&hadc1);
 
@@ -222,21 +219,6 @@ static void App_Init(void)
     Error_Handler();
   }
 
-	
-///* ---- 娣诲姞 UART 澶嶄綅涓庢祴璇曚唬鐮?---- */
-//  // 1. 娓呴櫎鍙兘娈嬬暀鐨勯敊璇爣蹇楋紝骞堕噸鏂板惎鍔?USART1
-//  __HAL_UART_CLEAR_FLAG(&huart1, UART_FLAG_TC | UART_FLAG_RXNE | UART_FLAG_ORE | UART_FLAG_FE | UART_FLAG_NE);
-//  HAL_UART_Abort(&huart1);               // 涓鍙兘瀛樺湪鐨勬湭瀹屾垚浼犺緭
-//  HAL_UART_DeInit(&huart1);              // 褰诲簳澶嶄綅纭欢
-//  MX_USART1_UART_Init();                 // 閲嶆柊鍒濆鍖?USART1
-
-//  // 2. 鍙戦€佹祴璇曞瓧绗︿覆锛屽苟妫€鏌ヨ繑鍥炲€?
-//  uint8_t test_msg[] = "USART1 Ready\r\n";
-//  if (HAL_UART_Transmit(&huart1, test_msg, sizeof(test_msg) - 1, 100) != HAL_OK)
-//  {
-//      // 濡傛灉鍙戦€佸け璐ワ紝璁╂暟鐮佺闂儊 888 浣滀负閿欒鎸囩ず锛堜綘鑷繁鍙互瑙傚療锛?
-//      App_Display_SetNumber(888);
-//  }
 }
 
 static void App_Task(void)
@@ -309,51 +291,57 @@ static uint8_t App_ReadSpeedPercent(void)
 
 static uint8_t App_ReadStopSwitch(void)
 {
-  return (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_3) == GPIO_PIN_SET) ? 1U : 0U;
+    /* PC1 低电平 = 刹车（停止），高电平 = 运行 */
+    if (HAL_GPIO_ReadPin(APP_BRAKE_GPIO_PORT, APP_BRAKE_GPIO_PIN) == GPIO_PIN_RESET)
+    {
+        return 1U;   // 停止
+    }
+    else
+    {
+        return 0U;   // 允许运行
+    }
 }
 
 static void App_SendMotorCommands(uint8_t speed_percent, uint8_t stop_active)
 {
-  uint32_t rpm = ((uint32_t)speed_percent * APP_MOTOR_MAX_RPM + 50U) / 100U;
-  uint8_t enable = (stop_active == 0U) ? 1U : 0U;
-  uint8_t i;
+    uint32_t rpm = ((uint32_t)speed_percent * APP_MOTOR_MAX_RPM + 50U) / 100U;
+    uint8_t enable = (stop_active == 0U) ? 1U : 0U;
+    uint8_t i;
 
-  /* Speed command fan-out: one potentiometer value, per-motor direction config. */
 #if APP_MOTOR_DUAL_NODE1_MODE
-  const uint8_t motor_count = 1U;
+    const uint8_t motor_count = 1U;
 #else
-  const uint8_t motor_count = (uint8_t)(sizeof(app_motor_configs) / sizeof(app_motor_configs[0]));
+    const uint8_t motor_count = (uint8_t)(sizeof(app_motor_configs) / sizeof(app_motor_configs[0]));
 #endif
 
-  for (i = 0U; i < motor_count; i++)
-  {
-    uint8_t retry;
-    uint8_t node_id = app_motor_configs[i].node_id;
-    int16_t speed_rpm = enable ? (int16_t)((int32_t)rpm * App_GetMotorDirection(node_id)) : 0;
-    HAL_StatusTypeDef status = HAL_ERROR;
+    for (i = 0U; i < motor_count; i++)
+    {
+        uint8_t retry;
+        uint8_t node_id = app_motor_configs[i].node_id;
+        int16_t speed_rpm = enable ? (int16_t)((int32_t)rpm * App_GetMotorDirection(node_id)) : 0;
+        HAL_StatusTypeDef status = HAL_ERROR;
 
-    app_target_rpm[i] = speed_rpm;
-    for (retry = 0U; retry < APP_CAN_TX_RETRY_COUNT; retry++)
-    {
-      status = App_SendMotorCommand(node_id, speed_rpm, enable);
-      if (status == HAL_OK)
-      {
-        break;
-      }
+        app_target_rpm[i] = speed_rpm;
+        for (retry = 0U; retry < APP_CAN_TX_RETRY_COUNT; retry++)
+        {
+            status = App_SendMotorCommand(node_id, speed_rpm, enable);
+            if (status == HAL_OK)
+            {
+                break;
+            }
+        }
+        if (status != HAL_OK)
+        {
+            app_can_tx_error_count++;
+            if (app_can_tx_error_count > 50U)
+            {
+                HAL_CAN_Stop(&hcan);
+                HAL_CAN_Start(&hcan);
+                HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
+                app_can_tx_error_count = 0U;
+            }
+        }
     }
-    if (status != HAL_OK)
-    {
-      app_can_tx_error_count++;
-      /* CAN BUS-OFF recovery: if TX keeps failing, re-initialize CAN */
-      if (app_can_tx_error_count > 50U)
-      {
-        HAL_CAN_Stop(&hcan);
-        HAL_CAN_Start(&hcan);
-        HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
-        app_can_tx_error_count = 0U;
-      }
-    }
-  }
 }
 
 static HAL_StatusTypeDef App_SendMotorCommand(uint8_t node_id, int16_t speed_rpm, uint8_t enable)
@@ -381,7 +369,8 @@ static HAL_StatusTypeDef App_SendMotorCommand(uint8_t node_id, int16_t speed_rpm
   tx_header.DLC = 8U;
   tx_header.TransmitGlobalTime = DISABLE;
 
-  tx_data[0] = enable ? 0x03U : 0x00U; /* Bit0 enable, Bit1..2 = 1 speed mode. */
+  /* Bit0 enable, Bit1..2 = 1 speed mode, Bit3 EBrakeCmd = 0 (MCU控制，即刹车就绪) */
+  tx_data[0] = enable ? 0x03U : 0x00U;
   tx_data[1] = (uint8_t)(APP_TORQUE_OFFSET_RAW & 0xFFU);
   tx_data[2] = (uint8_t)(APP_TORQUE_OFFSET_RAW >> 8);
   tx_data[3] = (uint8_t)(speed_raw & 0xFFU);
