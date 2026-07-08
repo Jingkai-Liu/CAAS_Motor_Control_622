@@ -1,0 +1,2 @@
+# CAAS_Motor_Control_622
+使用STM32F1的永磁同步电机控制模块
