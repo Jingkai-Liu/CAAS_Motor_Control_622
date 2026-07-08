@@ -1,0 +1,35 @@
+# ===== VS Code 默认生成的（保留前两行） =====
+build
+mx.scratch
+
+# ===== 针对单片机工程手动追加（强烈建议加上） =====
+# 忽略 IDE 个人配置（解决 !.settings 的隐患）
+!.settings
+!.vscode/
+MDK-ARM/
+
+# 忽略所有编译中间文件
+*.o
+*.obj
+*.d
+*.lst
+*.map
+*.elf
+*.hex
+*.bin
+*.srec
+
+# 忽略 Keil / IAR 等工具链生成文件
+*.crf
+*.htm
+*.dep
+*.bak
+*.tmp
+*.mxproject
+*.uvguix.*
+*.uvoptx
+*.uvprojx
+
+# 忽略 CubeMX 生成的临时备份
+*.orig
+*.rej

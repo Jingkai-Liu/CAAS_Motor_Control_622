@@ -1,0 +1,26 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Flash Target",
+            "type": "shell",
+            "command": "openocd",
+            "args": [
+                "-s", "C:/Users/65133/scoop/apps/openocd/current/share/openocd/scripts",
+                "-f", "interface/cmsis-dap.cfg", // 使用 DAPLink
+                "-f", "target/stm32f1x.cfg", // 根据你的芯片修改！例如 stm32f4x.cfg, stm32h7x.cfg
+                // 下面这行代码会自动获取 STM32CubeIDE 插件编译出的 elf 文件路径,如果环境不是基于 STM32CubeIDE for VSCode 则需要将环境变量替换为具体可执行文件位置，具体可以问 AI
+                "-c", "program build/Debug/622motor.elf verify reset; resume; exit"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "executable": "${workspaceFolder}/build/Debug/622motor.elf",
+            "presentation": {
+                "echo": true,
+                "reveal": "always"
+            }
+        }
+    ]
+}

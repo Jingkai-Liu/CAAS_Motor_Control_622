@@ -1,0 +1,69 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug with OpenOCD",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceFolder}",
+            // 核心：指定要调试的 ELF 文件
+            "executable": "${workspaceFolder}/build/Debug/622motor.elf",
+            // // 让调试器停在 main 函数
+            // "runToEntryPoint": "main",
+            // 指定 OpenOCD 配置文件，相当于命令行的 -f
+            "configFiles": [
+                "interface/cmsis-dap.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            // 指定 OpenOCD 脚本搜索路径，相当于命令行的 -s
+            "searchDir": [
+                "C:/Users/65133/scoop/apps/openocd/current/share/openocd/scripts"
+            ],
+            // 如果 openocd 不在 PATH 中，可以在这里指定绝对路径
+            // "openocdPath": "C:/Users/65133/scoop/apps/openocd/current/bin/openocd.exe",
+            // 如果你在 settings.json 中配置了 gdbPath，这里可以省略
+            "gdbPath": "C:/Users/65133/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gdb.exe",
+            "showDevDebugOutput": "none"
+        },
+        {
+            "name": "Release (OpenOCD)",        // Release 配置
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "executable": "${workspaceFolder}/build/Release/622motor.elf",
+            "configFiles": [
+                "interface/cmsis-dap.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            // 指定 OpenOCD 脚本搜索路径，相当于命令行的 -s
+            "searchDir": [
+                "C:/Users/65133/scoop/apps/openocd/current/share/openocd/scripts"
+            ],
+            // 如果 openocd 不在 PATH 中，可以在这里指定绝对路径
+            // "openocdPath": "C:/Users/65133/scoop/apps/openocd/current/bin/openocd.exe",
+            // 如果你在 settings.json 中配置了 gdbPath，这里可以省略
+            "gdbPath": "C:/Users/65133/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gdb.exe",
+            "showDevDebugOutput": "none"
+        },
+        {
+            "name": "Flash Only",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "executable": "${workspaceFolder}/build/Debug/622motor.elf",
+            "configFiles": [
+                "interface/cmsis-dap.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            "searchDir": [
+                "C:/Users/65133/scoop/apps/openocd/current/share/openocd/scripts"
+            ],
+            "gdbPath": "C:/Users/65133/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/14.3.1+st.2/bin/arm-none-eabi-gdb.exe",
+            "runToEntryPoint": "",          // 不设置入口断点，不会停在main
+            "preRestartCommands": [],       // 可选
+            "postResetCommands": ["continue"]  // 烧录后自动继续运行
+}
+        
+    ]
+}
