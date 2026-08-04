@@ -370,7 +370,7 @@ static HAL_StatusTypeDef App_SendMotorCommand(uint8_t node_id, int16_t speed_rpm
   tx_header.TransmitGlobalTime = DISABLE;
 
   /* Bit0 enable, Bit1..2 = 1 speed mode, Bit3 EBrakeCmd = 0 (MCU控制，即刹车就绪) */
-  tx_data[0] = enable ? 0x03U : 0x00U;
+  tx_data[0] = enable ? 0x0BU : 0x00U;
   tx_data[1] = (uint8_t)(APP_TORQUE_OFFSET_RAW & 0xFFU);
   tx_data[2] = (uint8_t)(APP_TORQUE_OFFSET_RAW >> 8);
   tx_data[3] = (uint8_t)(speed_raw & 0xFFU);
