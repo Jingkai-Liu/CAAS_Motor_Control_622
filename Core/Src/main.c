@@ -25,6 +25,7 @@
 #include "sdio.h"
 #include "usart.h"
 #include "gpio.h"
+#include "sd_logger.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -78,6 +79,7 @@ extern DMA_HandleTypeDef hdma_usart1_tx;
 #define APP_MOTOR_MAX_RPM            3000U
 #define APP_SPEED_OFFSET_RPM         30000L
 #define APP_TORQUE_OFFSET_RAW        10000U
+#define APP_TARGET_TORQUE_DNM         0     /* Current speed command sends zero torque request. */
 #define APP_CAN_CMD_BASE_ID          0x200U
 #define APP_CAN_STATUS1_BASE_ID      0x180U
 #define APP_CAN_STATUS2_BASE_ID      0x280U
@@ -127,6 +129,7 @@ static volatile uint32_t app_can_tx_error_count = 0U;
 static volatile uint32_t app_adc_error_count = 0U;
 static volatile uint32_t app_uart_error_count = 0U;
 static uint16_t app_adc_raw = 0U;
+static int16_t app_target_torque_dNm[2] = {0};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -140,6 +143,7 @@ static uint8_t App_ReadStopSwitch(void);
 static void App_SendMotorCommands(uint8_t speed_percent, uint8_t stop_active);
 static HAL_StatusTypeDef App_SendMotorCommand(uint8_t node_id, int16_t speed_rpm, uint8_t enable);
 static void App_ProcessCanFrame(const CAN_RxHeaderTypeDef *header, const uint8_t data[8]);
+static void App_LogMotorStatusFromIsr(uint8_t node_id, const volatile AppMotorStatus_t *motor);
 static volatile AppMotorStatus_t *App_FindMotorByNode(uint8_t node_id);
 static int8_t App_GetMotorDirection(uint8_t node_id);
 static void App_CopyMotorSnapshot(AppMotorStatus_t snapshot[2], int16_t target_rpm[2]);
@@ -185,6 +189,9 @@ static void App_AnoSendFrame(
 static void App_Init(void)
 {
   CAN_FilterTypeDef filter = {0};
+
+  /* Initialise the queue before enabling CAN receive interrupts. */
+  SdLogger_Init();
 
   app_motors[0].node_id = APP_MOTOR_NODE_ID_1;
 #if APP_MOTOR_DUAL_NODE1_MODE
@@ -242,6 +249,8 @@ static void App_Task(void)
     last_uart_tick = now;
     App_UartReport();
   }
+
+  SdLogger_Task();
 }
 
 static uint16_t App_ReadAdcRaw(void)
@@ -324,6 +333,7 @@ static void App_SendMotorCommands(uint8_t speed_percent, uint8_t stop_active)
         HAL_StatusTypeDef status = HAL_ERROR;
 
         app_target_rpm[i] = speed_rpm;
+        app_target_torque_dNm[i] = APP_TARGET_TORQUE_DNM;
         for (retry = 0U; retry < APP_CAN_TX_RETRY_COUNT; retry++)
         {
             status = App_SendMotorCommand(node_id, speed_rpm, enable);
@@ -411,6 +421,7 @@ static void App_ProcessCanFrame(const CAN_RxHeaderTypeDef *header, const uint8_t
       motor->controller_temp_c = (int16_t)data[6] - 40;
       motor->error_code = data[7];
       motor->last_status1_tick = HAL_GetTick();
+      App_LogMotorStatusFromIsr(node_id, motor);
       if (node_id == APP_MOTOR_NODE_ID_1)
       {
       }
@@ -432,6 +443,25 @@ static void App_ProcessCanFrame(const CAN_RxHeaderTypeDef *header, const uint8_t
       motor->last_status2_tick = HAL_GetTick();
     }
   }
+}
+
+static void App_LogMotorStatusFromIsr(uint8_t node_id, const volatile AppMotorStatus_t *motor)
+{
+  SdLoggerRecord_t record;
+  uint8_t index = (node_id == APP_MOTOR_NODE_ID_1) ? 0U : 1U;
+
+  record.timestamp_ms = HAL_GetTick();
+  record.motor_id = node_id;
+  record.actual_speed_rpm = motor->mech_rpm;
+  record.target_speed_rpm = app_target_rpm[index];
+  record.actual_torque_dNm = motor->torque_dNm;
+  record.target_torque_dNm = app_target_torque_dNm[index];
+  record.bus_voltage_dV = motor->udc_dV;
+  record.bus_current_dA = motor->idc_dA;
+  record.phase_current_dA = motor->iphase_dA;
+  record.controller_temp_c = motor->controller_temp_c;
+  record.fault_code = motor->error_code;
+  SdLogger_PushFromIsr(&record);
 }
 
 static volatile AppMotorStatus_t *App_FindMotorByNode(uint8_t node_id)
